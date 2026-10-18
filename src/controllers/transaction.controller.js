@@ -3,11 +3,18 @@ import Accounts from "../models/accounts.model.js"
 import transactions from "../models/transactions.model.js";
 import ledger from "../models/ledger.models.js";
 import redisClient from "../config/redis.js";
-
+import { transferFundsSchema } from "../validators/transactions.validator.js";
 export const transferFunds = async (request , response) => 
 {
     
-    const { fromAccountId, toAccountId, amount, idempotencyKey } = request.body;
+    const validation = transferFundsSchema.safeParse(request.body) ;
+
+    if(!validation.success)
+    {
+        return response.status(400).send({errors: validation.error.format()}) ; 
+    }
+
+    const { fromAccountId, toAccountId, amount, idempotencyKey } = validation.data;
    
     const lock = await redisClient.set(idempotencyKey , "locked" ,"NX" , "EX" , 86400); 
     if(!lock)
@@ -44,10 +51,6 @@ export const transferFunds = async (request , response) =>
         {
             await session.abortTransaction() ; 
             return response.status(401).send("Unauthorized transaction."); 
-        }
-        
-        if(!amount || amount <= 0) {
-            return response.status(400).send("Amount must be greater than 0");
         }
         
         

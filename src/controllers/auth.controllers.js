@@ -3,14 +3,21 @@ import mongoose from "mongoose";
 import jwt from "jsonwebtoken" ; 
 import dotenv from "dotenv"; 
 import redisClient from "../config/redis.js";
-
+import { loginSchema , registerSchema } from "../validators/auth.validators.js";
 
 
 
 
 export const userLoginController = async (request , response) =>{
 
-    const {email , password} = request.body; 
+    const validation = loginSchema.safeParse(request.body);
+
+    if(!validation.success)
+    {
+        return response.status(400).send({message: "Validation failed",errors: validation.error.issues.map(issue => issue.message)});
+    }
+
+    const {email , password} = validation.data; 
 
     try
     {
@@ -36,7 +43,15 @@ export const userLoginController = async (request , response) =>{
 
 export const userRegisterController = async (request , response) =>
 {
-    const {email ,name,password} = request.body; 
+
+    const validation = registerSchema.safeParse(request.body);
+
+    if(!validation.success)
+    {
+        return response.status(400).send({message: "Validation failed",errors: validation.error.issues.map(issue => issue.message)});
+    }
+
+    const {email ,name,password} = validation.data; 
 
     try
     {
