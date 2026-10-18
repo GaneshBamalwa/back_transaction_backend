@@ -2,6 +2,7 @@ import User from "../models/user.model.js" ;
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken" ; 
 import dotenv from "dotenv"; 
+import redisClient from "../config/redis.js";
 
 
 
@@ -55,3 +56,24 @@ export const userRegisterController = async (request , response) =>
             return response.status(500).send("Internal Server Error."); 
     }
 };
+
+
+
+export const logoutUser = async (request , response) => 
+{
+    const {token}  = request.cookies; 
+
+    const decoded = jwt.decode(token); 
+    
+    const exp = decoded.exp ; 
+    
+    const remaining = exp - Math.floor(Date.now() / 1000) ; 
+    
+    await redisClient.set(token , "blacklist" , "EX" , remaining); 
+
+    response.clearCookie("token"); 
+
+    return response.status(200).send("Logged out successfully.")
+
+
+}; 

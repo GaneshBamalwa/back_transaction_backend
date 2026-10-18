@@ -2,14 +2,19 @@ import mongoose from "mongoose";
 import Accounts from "../models/accounts.model.js" 
 import transactions from "../models/transactions.model.js";
 import ledger from "../models/ledger.models.js";
-
+import redisClient from "../config/redis.js";
 
 export const transferFunds = async (request , response) => 
 {
     
     const { fromAccountId, toAccountId, amount, idempotencyKey } = request.body;
-    const idemTransaction  = await transactions.findOne({idempotencyKey : idempotencyKey});
-    
+   
+    const lock = await redisClient.set(idempotencyKey , "locked" ,"NX" , "EX" , 86400); 
+    if(!lock)
+    {
+        return response.status(409).send("Duplicate request. Transaction already processed or in progress.")
+    }
+
     const session = await mongoose.startSession(); 
     session.startTransaction();
 
@@ -45,28 +50,6 @@ export const transferFunds = async (request , response) =>
             return response.status(400).send("Amount must be greater than 0");
         }
         
-
-
-    if(idemTransaction)
-    {
-        if(idemTransaction.transactionStatus === "Pending")
-        {
-            return response.status(409).send("Transaction pending, please wait."); 
-        }
-        else if(idemTransaction.transactionStatus === "Failed")
-        {
-            return response.status(409).send("Transaction already failed, please initiate a new transaction.");
-        }
-        else if(idemTransaction.transactionStatus === "Reversed")
-        {
-            return response.status(409).send("Transaction reversed by the server, please initiate a new transaction.");
-        }
-        else
-        {
-            return response.status(409).send("Transaction completed.");
-        }
-    }
-
         
         if(fromAccount.balance < amount)
         {
@@ -116,6 +99,11 @@ export const transferFunds = async (request , response) =>
 
 
         await session.commitTransaction();
+
+        await redisClient.del(fromAccountId); 
+        await redisClient.del(toAccountId); 
+        
+
         return response.status(201).send({ transaction: newTransaction[0] });
     }catch(error)
     {
@@ -143,10 +131,20 @@ export const getTransactionHistory = async (request, response) => {
         return response.status(403).send("Unauthorized access. not middleware");
         }
 
+    const details = await redisClient.get(account._id); 
 
-    const transactionDetails = await ledger.find({account : accountId}).populate("transaction") ; 
-    return response.status(200).send(transactionDetails) ; 
+    if(details)
+    {
+        return response.status(200).send(JSON.parse(details)) ; 
+    }
+    else 
+    {
+        const transactionDetails = await ledger.find({account : accountId}).populate("transaction") ; 
+        await redisClient.set(account._id , JSON.stringify(transactionDetails) ,"EX", 15*60 ) ; 
+        return response.status(200).send(transactionDetails) ; 
 
+    }
+    
     }catch(error)
     {
         console.log(error) ;
